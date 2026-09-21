@@ -3,17 +3,48 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { Target, CheckCircle2, XCircle, History, AlertTriangle, IndianRupee, Clock, ListChecks, CalendarClock, StickyNote, Sparkles } from "lucide-react";
+import {
+  Target,
+  CheckCircle2,
+  XCircle,
+  History,
+  AlertTriangle,
+  IndianRupee,
+  Clock,
+  ListChecks,
+  CalendarClock,
+  StickyNote,
+  Sparkles,
+} from "lucide-react";
 import { HowButton } from "@/components/common/HowButton";
-import { CLOSE_WINDOWS, WINDOW_BY_ID, TONE_STYLE, CLOSE_STEPS, type CloseWindowId } from "@/lib/commitments/windows";
+import {
+  CLOSE_WINDOWS,
+  WINDOW_BY_ID,
+  TONE_STYLE,
+  CLOSE_STEPS,
+  type CloseWindowId,
+} from "@/lib/commitments/windows";
 import { promiseStrength, riskFlags } from "@/lib/commitments/insights";
 import { NotClosedDialog } from "./NotClosedDialog";
 import {
-  useCommitments, openCommitmentFor, commitmentsFor, promiseClose, markKept,
-  hoursLeft, isExpired, dueFromWindow,
+  useCommitments,
+  openCommitmentFor,
+  commitmentsFor,
+  promiseClose,
+  markKept,
+  hoursLeft,
+  isExpired,
+  dueFromWindow,
 } from "@/lib/commitments/store";
 
 interface Props {
@@ -27,7 +58,13 @@ interface Props {
 
 function fmt(iso: string) {
   const d = new Date(iso);
-  return d.toLocaleString(undefined, { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString(undefined, {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function shortTime(iso: string) {
@@ -43,21 +80,43 @@ function countdown(h: number) {
 
 const QUICK_TIMES = ["10:00", "12:00", "15:00", "18:00", "20:00"];
 
+// GHARPAY_TODO: Using the Default Step and Next QuickTime to reduce the clicks.
+const DEFAULT_STEPS = ["Call the customer now", "Send the payment link"];
+
+/** The next quick slot that is at least 30 minutes away. */
+function nextQuickTime() {
+  const t = QUICK_TIMES.find((q) => {
+    const [h, m] = q.split(":").map(Number);
+    const d = new Date();
+    d.setHours(h, m, 0, 0);
+    return d.getTime() > Date.now() + 30 * 60_000;
+  });
+  return t ?? QUICK_TIMES[0];
+}
+
 /**
  * "Definitely Close" — the promise button that must exist on every lead.
  * Four decisions: the hour, the deadline, the moves, an optional note. A live
  * strength meter tells the closer what the promise is worth before committing.
  */
-export function CloseCommitButton({ leadId, leadName, leadPhone = "", actorName = "You", size = "xs", className }: Props) {
+export function CloseCommitButton({
+  leadId,
+  leadName,
+  leadPhone = "",
+  actorName = "You",
+  size = "xs",
+  className,
+}: Props) {
   const all = useCommitments();
   const live = openCommitmentFor(all, leadId);
   const history = useMemo(() => commitmentsFor(all, leadId), [all, leadId]);
 
   const [open, setOpen] = useState(false);
   const [windowId, setWindowId] = useState<CloseWindowId>(live?.windowId ?? "48h");
-  const [customDate, setCustomDate] = useState("");
-  const [timeOfDay, setTimeOfDay] = useState("");
-  const [steps, setSteps] = useState<string[]>(live?.steps ?? []);
+  const [customDate, setCustomDate] = useState(""); // was: useState("")  and  useState<string[]>(live?.steps ?? [])
+  // GHARPAY_TODO: Udated useState for timeOfDay to nextQuickTime() and also updated setSteps to load the defayult steps.
+  const [timeOfDay, setTimeOfDay] = useState(live ? "" : nextQuickTime());
+  const [steps, setSteps] = useState<string[]>(live?.steps ?? DEFAULT_STEPS);
   const [note, setNote] = useState("");
 
   const def = WINDOW_BY_ID[windowId];
@@ -72,27 +131,90 @@ export function CloseCommitButton({ leadId, leadName, leadPhone = "", actorName 
   const toggleStep = (v: string) =>
     setSteps((prev) => (prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]));
 
-  const strength = promiseStrength({ windowId, timeOfDay, customDate, steps, changeCount: live?.changeCount ?? 0 });
+  const strength = promiseStrength({
+    windowId,
+    timeOfDay,
+    customDate,
+    steps,
+    changeCount: live?.changeCount ?? 0,
+  });
   const flags = live ? riskFlags(live) : [];
 
+  // const submit = () => {
+  //   if (windowId === "custom" && !customDate) {
+  //     toast.error("Pick the exact date you will close this");
+  //     return;
+  //   }
+  //   promiseClose({
+  //     leadId,
+  //     leadName,
+  //     leadPhone,
+  //     windowId,
+  //     customDate,
+  //     timeOfDay,
+  //     steps,
+  //     note,
+  //     by: actorName,
+  //   });
+  //   toast.success(
+  //     isChange
+  //       ? `Promise moved — ${def.short}`
+  //       : `Committed: ${leadName} closes ${fmt(previewDue)}`,
+  //     {
+  //       description: steps.length
+  //         ? `${steps.length} step${steps.length === 1 ? "" : "s"} on your plan`
+  //         : "No steps picked — add them when you know the plan.",
+  //     },
+  //   );
+  //   setNote("");
+  //   setOpen(false);
+  // };
+
+  /*GHARPAY_TODO: Updated the Submit Funciton*/
   const submit = () => {
     if (windowId === "custom" && !customDate) {
       toast.error("Pick the exact date you will close this");
       return;
     }
-    promiseClose({ leadId, leadName, leadPhone, windowId, customDate, timeOfDay, steps, note, by: actorName });
-    toast.success(isChange ? `Promise moved — ${def.short}` : `Committed: ${leadName} closes ${fmt(previewDue)}`, {
-      description: steps.length ? `${steps.length} step${steps.length === 1 ? "" : "s"} on your plan` : "No steps picked — add them when you know the plan.",
+    promiseClose({
+      leadId,
+      leadName,
+      leadPhone,
+      windowId,
+      customDate,
+      timeOfDay,
+      steps,
+      note,
+      by: actorName,
     });
+
+    // The message, follow-up and next step are written for the person — they only paste and send.
+    const first = leadName.split(" ")[0];
+    const message = `Hi ${first}, confirming we will complete your booking by ${fmt(previewDue)}. I'll check in with you before then — just reply here if anything changes.`;
+    void navigator.clipboard?.writeText(message)?.catch(() => {});
+    const followUpAt = new Date(
+      Math.max(Date.now() + 30 * 60_000, new Date(previewDue).getTime() - 2 * 3_600_000),
+    ).toISOString();
+
+    toast.success(
+      isChange
+        ? `Promise moved — ${def.short}`
+        : `Committed: ${leadName} closes ${fmt(previewDue)}`,
+      {
+        description: `Message copied — paste into WhatsApp · Next: ${steps[0] ?? "Check in with the customer"} · Follow-up ${shortTime(followUpAt)}`,
+      },
+    );
     setNote("");
     setOpen(false);
   };
 
   // ⌘/Ctrl+Enter commits — the promise should cost one keystroke, not five clicks.
+  // GHARPAY_TODO: Updated the useEffect to include the Enter key when in an input field.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      const inField = (e.target as HTMLElement).tagName === "INPUT";
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey || inField)) {
         e.preventDefault();
         submit();
       }
@@ -119,7 +241,9 @@ export function CloseCommitButton({ leadId, leadName, leadPhone = "", actorName 
             )}
           >
             <Target className="h-3 w-3" />
-            {live ? `Closing ${WINDOW_BY_ID[live.windowId]?.short} · ${countdown(left)}` : "Definitely Close"}
+            {live
+              ? `Closing ${WINDOW_BY_ID[live.windowId]?.short} · ${countdown(left)}`
+              : "Definitely Close"}
           </Button>
         </DialogTrigger>
 
@@ -131,23 +255,35 @@ export function CloseCommitButton({ leadId, leadName, leadPhone = "", actorName 
               {isChange ? "Move the close promise" : "Definitely Close"} — {leadName}
             </DialogTitle>
             <DialogDescription className="text-[11px] leading-relaxed">
-              Four decisions: the hour, the deadline, the moves you will make, and a note if you want one.
-              Stored with your name so the morning review can check it.
+              Result: this promise becomes a booking. It is pre-filled with a strong plan — press
+              Enter or ⌘/Ctrl+Enter to commit, or change anything first. Stored with your name and
+              time.
             </DialogDescription>
           </DialogHeader>
 
           {/* Scroll body */}
           <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
             {live && (
-              <div className={cn("rounded-lg border p-2.5 text-[11px]", overdue ? "border-destructive/50 bg-destructive/5" : "border-border bg-muted/40")}>
+              <div
+                className={cn(
+                  "rounded-lg border p-2.5 text-[11px]",
+                  overdue ? "border-destructive/50 bg-destructive/5" : "border-border bg-muted/40",
+                )}
+              >
                 <p className="font-semibold">
-                  Current promise: {WINDOW_BY_ID[live.windowId]?.short} · due {fmt(live.dueAt)} · {countdown(left)}
+                  Current promise: {WINDOW_BY_ID[live.windowId]?.short} · due {fmt(live.dueAt)} ·{" "}
+                  {countdown(left)}
                 </p>
-                <p className="text-muted-foreground">Promised by {live.promisedBy} · moved {live.changeCount}×</p>
+                <p className="text-muted-foreground">
+                  Promised by {live.promisedBy} · moved {live.changeCount}×
+                </p>
                 {flags.length > 0 && (
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     {flags.map((f) => (
-                      <span key={f} className="rounded-full border border-destructive/40 bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
+                      <span
+                        key={f}
+                        className="rounded-full border border-destructive/40 bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive"
+                      >
                         {f}
                       </span>
                     ))}
@@ -178,7 +314,11 @@ export function CloseCommitButton({ leadId, leadName, leadPhone = "", actorName 
             >
               <div className="flex flex-wrap items-center gap-1.5">
                 {QUICK_TIMES.map((t) => (
-                  <Chip key={t} active={timeOfDay === t} onClick={() => setTimeOfDay(timeOfDay === t ? "" : t)}>
+                  <Chip
+                    key={t}
+                    active={timeOfDay === t}
+                    onClick={() => setTimeOfDay(timeOfDay === t ? "" : t)}
+                  >
                     {t}
                   </Chip>
                 ))}
@@ -190,7 +330,11 @@ export function CloseCommitButton({ leadId, leadName, leadPhone = "", actorName 
                   className="h-7 w-28 text-[11px]"
                 />
                 {timeOfDay && (
-                  <button type="button" onClick={() => setTimeOfDay("")} className="text-[10px] text-muted-foreground underline">
+                  <button
+                    type="button"
+                    onClick={() => setTimeOfDay("")}
+                    className="text-[10px] text-muted-foreground underline"
+                  >
                     clear
                   </button>
                 )}
@@ -212,7 +356,9 @@ export function CloseCommitButton({ leadId, leadName, leadPhone = "", actorName 
                     "Pick the window that matches the customer's reality, not the one that looks best.",
                     "Open the ⓘ next to any window for its full operating manual.",
                   ]}
-                  whatNotToDo={["Never park an unspoken-to lead in a long window to clear your board."]}
+                  whatNotToDo={[
+                    "Never park an unspoken-to lead in a long window to clear your board.",
+                  ]}
                   doneWhen="The due moment shown below is one you would defend in the morning review."
                 />
               }
@@ -229,12 +375,21 @@ export function CloseCommitButton({ leadId, leadName, leadPhone = "", actorName 
                         aria-pressed={active}
                         className={cn(
                           "flex-1 rounded-lg border px-2.5 py-1.5 text-left transition",
-                          active ? cn("border-primary ring-1 ring-primary/40", TONE_STYLE[w.tone]) : "border-border hover:bg-muted",
+                          active
+                            ? cn("border-primary ring-1 ring-primary/40", TONE_STYLE[w.tone])
+                            : "border-border hover:bg-muted",
                         )}
                       >
                         <span className="block text-[11px] font-semibold">{w.short}</span>
-                        <span className={cn("block text-[10px]", active ? "opacity-80" : "text-muted-foreground")}>
-                          {w.id === "custom" ? "you pick the date" : `→ ${fmt(wDue).replace(/,/g, "")}`}
+                        <span
+                          className={cn(
+                            "block text-[10px]",
+                            active ? "opacity-80" : "text-muted-foreground",
+                          )}
+                        >
+                          {w.id === "custom"
+                            ? "you pick the date"
+                            : `→ ${fmt(wDue).replace(/,/g, "")}`}
                         </span>
                       </button>
                       <HowButton
@@ -270,7 +425,9 @@ export function CloseCommitButton({ leadId, leadName, leadPhone = "", actorName 
               n={3}
               icon={<ListChecks className="h-3.5 w-3.5" />}
               title="Steps you will take"
-              subtitle={steps.length ? `${steps.length} picked · 2–3 is a plan` : "Tick 2–3 concrete moves"}
+              subtitle={
+                steps.length ? `${steps.length} picked · 2–3 is a plan` : "Tick 2–3 concrete moves"
+              }
               done={steps.length >= 2}
               how={
                 <HowButton
@@ -281,22 +438,34 @@ export function CloseCommitButton({ leadId, leadName, leadPhone = "", actorName 
                     "Two or three steps is a plan; eight steps is a wish list.",
                     "If none of the steps fit, write the real move in the note.",
                   ]}
-                  whatNotToDo={["Do not tick every box to look thorough.", "Do not tick a step that depends on someone who has not agreed to it."]}
-                  problemsThatCanOccur={["Steps get ticked and never executed — the review compares steps against the activity log."]}
+                  whatNotToDo={[
+                    "Do not tick every box to look thorough.",
+                    "Do not tick a step that depends on someone who has not agreed to it.",
+                  ]}
+                  problemsThatCanOccur={[
+                    "Steps get ticked and never executed — the review compares steps against the activity log.",
+                  ]}
                   doneWhen="Every ticked step is either done or explained by the deadline."
                 />
               }
             >
               <div className="flex flex-wrap gap-1">
                 {stepOptions.map((sOpt) => (
-                  <Chip key={sOpt} active={steps.includes(sOpt)} onClick={() => toggleStep(sOpt)} className="max-w-full truncate text-[10px]">
-                    {steps.includes(sOpt) ? "✓ " : ""}{sOpt}
+                  <Chip
+                    key={sOpt}
+                    active={steps.includes(sOpt)}
+                    onClick={() => toggleStep(sOpt)}
+                    className="max-w-full truncate text-[10px]"
+                  >
+                    {steps.includes(sOpt) ? "✓ " : ""}
+                    {sOpt}
                   </Chip>
                 ))}
               </div>
               {steps.length > 4 && (
                 <p className="mt-1 text-[10px] text-amber-600 dark:text-amber-400">
-                  {steps.length} ticked — that is a wish list. Keep the two or three that actually get to money.
+                  {steps.length} ticked — that is a wish list. Keep the two or three that actually
+                  get to money.
                 </p>
               )}
             </Section>
@@ -321,7 +490,16 @@ export function CloseCommitButton({ leadId, leadName, leadPhone = "", actorName 
             {/* Strength meter */}
             <div className="rounded-lg border border-border bg-muted/30 p-2.5">
               <div className="flex items-center gap-2">
-                <Sparkles className={cn("h-3.5 w-3.5", strength.grade === "strong" ? "text-emerald-600" : strength.grade === "fair" ? "text-amber-500" : "text-destructive")} />
+                <Sparkles
+                  className={cn(
+                    "h-3.5 w-3.5",
+                    strength.grade === "strong"
+                      ? "text-emerald-600"
+                      : strength.grade === "fair"
+                        ? "text-amber-500"
+                        : "text-destructive",
+                  )}
+                />
                 <p className="text-[11px] font-semibold">
                   Promise strength · <span className="tabular-nums">{strength.score}%</span>
                 </p>
@@ -329,7 +507,11 @@ export function CloseCommitButton({ leadId, leadName, leadPhone = "", actorName 
                   <div
                     className={cn(
                       "h-full rounded-full transition-all",
-                      strength.grade === "strong" ? "bg-emerald-500" : strength.grade === "fair" ? "bg-amber-500" : "bg-destructive",
+                      strength.grade === "strong"
+                        ? "bg-emerald-500"
+                        : strength.grade === "fair"
+                          ? "bg-amber-500"
+                          : "bg-destructive",
                     )}
                     style={{ width: `${Math.max(6, strength.score)}%` }}
                   />
@@ -338,7 +520,10 @@ export function CloseCommitButton({ leadId, leadName, leadPhone = "", actorName 
               <p className="mt-1 text-[10px] text-muted-foreground">{strength.verdict}</p>
               <ul className="mt-1.5 space-y-0.5">
                 {strength.parts.map((p) => (
-                  <li key={p.label} className="flex items-start gap-1.5 text-[10px] leading-relaxed">
+                  <li
+                    key={p.label}
+                    className="flex items-start gap-1.5 text-[10px] leading-relaxed"
+                  >
                     {p.ok ? (
                       <CheckCircle2 className="mt-[1px] h-3 w-3 shrink-0 text-emerald-600" />
                     ) : (
@@ -360,8 +545,12 @@ export function CloseCommitButton({ leadId, leadName, leadPhone = "", actorName 
                 </p>
                 {history.flatMap((c) =>
                   c.history.map((e, i) => (
-                    <p key={`${c.id}-${i}`} className="text-[11px] leading-relaxed text-muted-foreground">
-                      <span className="font-medium text-foreground">{fmt(e.at)}</span> · {e.by} · {e.kind}
+                    <p
+                      key={`${c.id}-${i}`}
+                      className="text-[11px] leading-relaxed text-muted-foreground"
+                    >
+                      <span className="font-medium text-foreground">{fmt(e.at)}</span> · {e.by} ·{" "}
+                      {e.kind}
                       {e.dueAt && ` → due ${fmt(e.dueAt)}`}
                       {e.prevDueAt && ` (was ${fmt(e.prevDueAt)})`}
                       {(e.reason || e.note) && ` · ${e.reason ?? e.note}`}
@@ -384,7 +573,11 @@ export function CloseCommitButton({ leadId, leadName, leadPhone = "", actorName 
                 <Button
                   variant="outline"
                   className="gap-1 text-emerald-600"
-                  onClick={() => { markKept(live.id, actorName); toast.success("Marked closed — booking credited"); setOpen(false); }}
+                  onClick={() => {
+                    markKept(live.id, actorName);
+                    toast.success("Marked closed — booking credited");
+                    setOpen(false);
+                  }}
                 >
                   <CheckCircle2 className="h-3.5 w-3.5" /> It closed
                 </Button>
@@ -419,24 +612,38 @@ export function CloseCommitButton({ leadId, leadName, leadPhone = "", actorName 
                 overdue && "border-destructive text-destructive",
               )}
             >
-              {overdue ? <AlertTriangle className="h-3 w-3" /> : <IndianRupee className="h-3 w-3" />}
+              {overdue ? (
+                <AlertTriangle className="h-3 w-3" />
+              ) : (
+                <IndianRupee className="h-3 w-3" />
+              )}
             </button>
           </PopoverTrigger>
           <PopoverContent align="start" className="w-72 space-y-1 text-[11px]">
-            <p className="font-semibold">{live.leadName} · {WINDOW_BY_ID[live.windowId]?.short}</p>
-            <p className="text-muted-foreground">Due {fmt(live.dueAt)} · {countdown(left)}</p>
+            <p className="font-semibold">
+              {live.leadName} · {WINDOW_BY_ID[live.windowId]?.short}
+            </p>
+            <p className="text-muted-foreground">
+              Due {fmt(live.dueAt)} · {countdown(left)}
+            </p>
             {live.steps?.length ? (
               <ul className="space-y-0.5">
                 {live.steps.map((st) => (
-                  <li key={st} className="text-foreground/90">• {st}</li>
+                  <li key={st} className="text-foreground/90">
+                    • {st}
+                  </li>
                 ))}
               </ul>
             ) : (
               <p className="text-muted-foreground">No steps picked yet.</p>
             )}
             {live.note && <p className="rounded bg-muted/60 p-1.5">{live.note}</p>}
-            {flags.length > 0 && <p className="font-medium text-destructive">{flags.join(" · ")}</p>}
-            <p className="text-muted-foreground">Promised by {live.promisedBy} · moved {live.changeCount}×</p>
+            {flags.length > 0 && (
+              <p className="font-medium text-destructive">{flags.join(" · ")}</p>
+            )}
+            <p className="text-muted-foreground">
+              Promised by {live.promisedBy} · moved {live.changeCount}×
+            </p>
           </PopoverContent>
         </Popover>
       )}
@@ -462,9 +669,18 @@ export function CloseCommitButton({ leadId, leadName, leadPhone = "", actorName 
           "The same lead is promised by two people — the board shows both and the manager decides.",
         ]}
         branches={[
-          { condition: "You have not spoken to the lead yet", then: "Do not promise. Call first, then commit." },
-          { condition: "The lead is decided and only payment is left", then: "Pick 3h and drive it to money the same session." },
-          { condition: "The deadline passes with no close", then: "Settle it honestly today: kept, broken, or moved." },
+          {
+            condition: "You have not spoken to the lead yet",
+            then: "Do not promise. Call first, then commit.",
+          },
+          {
+            condition: "The lead is decided and only payment is left",
+            then: "Pick 3h and drive it to money the same session.",
+          },
+          {
+            condition: "The deadline passes with no close",
+            then: "Settle it honestly today: kept, broken, or moved.",
+          },
         ]}
         doneWhen="Every lead you own has either a live promise with a date, or an honest reason it cannot have one."
         withText
@@ -476,10 +692,21 @@ export function CloseCommitButton({ leadId, leadName, leadPhone = "", actorName 
 /* ---------------- presentation atoms ---------------- */
 
 function Section({
-  n, icon, title, subtitle, done, how, children,
+  n,
+  icon,
+  title,
+  subtitle,
+  done,
+  how,
+  children,
 }: {
-  n: number; icon: React.ReactNode; title: string; subtitle?: string; done?: boolean;
-  how?: React.ReactNode; children: React.ReactNode;
+  n: number;
+  icon: React.ReactNode;
+  title: string;
+  subtitle?: string;
+  done?: boolean;
+  how?: React.ReactNode;
+  children: React.ReactNode;
 }) {
   return (
     <section className="space-y-1.5">
@@ -503,8 +730,16 @@ function Section({
 }
 
 function Chip({
-  active, onClick, children, className,
-}: { active: boolean; onClick: () => void; children: React.ReactNode; className?: string }) {
+  active,
+  onClick,
+  children,
+  className,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
     <button
       type="button"
@@ -512,7 +747,9 @@ function Chip({
       aria-pressed={active}
       className={cn(
         "rounded-full border px-2 py-0.5 text-[11px] transition",
-        active ? "border-primary bg-primary/10 font-medium text-primary" : "border-border text-muted-foreground hover:bg-muted",
+        active
+          ? "border-primary bg-primary/10 font-medium text-primary"
+          : "border-border text-muted-foreground hover:bg-muted",
         className,
       )}
     >
