@@ -7,6 +7,10 @@ import { seedCapturedRows, seedLeads } from "./seed";
 import { JOURNEY, currentStep } from "./journey";
 import { canonicalCustomerId } from "@/lib/canonical/customer-id";
 
+// GHARPAY_TODO: Added Toast and Supabase Client
+import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+
 const now = () => new Date().toISOString();
 const DAY = 86_400_000;
 
@@ -436,3 +440,97 @@ export const useBookingFlow = create<State>()(
     { name: "gharpayy-booking-flow-v2", version: 2 },
   ),
 );
+
+
+/*
+GHARPAY_TODO: 
+The following code is used for syncing the booking flow data with a remote database using Supabase. 
+It includes functions to queue changes, flush them to the database, and hydrate the local state with remote data.
+The code also handles potential conflicts between local and remote data, ensuring that the most recent changes are preserved.
+*/ 
+
+
+const db = () => supabase as unknown as { from: (t: string) => any };
+const TABLE = "booking_flow_records";
+type Kind = "lead" | "batch";
+
+const pending = new Map<string, { kind: Kind; id: string; data: FlowLead | Batch }>();
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let applyingRemote = false;
+
+async function flush() {
+  flushTimer = null;
+  const rows = [...pending.values()].map((p) => ({ kind: p.kind, id: p.id, data: p.data, updated_at: new Date().toISOString() }));
+  pending.clear();
+  try {
+    for (let i = 0; i < rows.length; i += 200) {
+      const { error } = await db().from(TABLE).upsert(rows.slice(i, i + 200), { onConflict: "kind,id" });
+      if (error) throw error;
+    }
+  } catch (e) {
+    toast.warning(`Saved on this device — not synced yet: ${(e as Error).message}`);
+  }
+}
+function queue(kind: Kind, item: FlowLead | Batch) {
+  pending.set(`${kind}:${item.id}`, { kind, id: item.id, data: item });
+  if (!flushTimer) flushTimer = setTimeout(() => void flush(), 600); // batches rapid edits into one save
+}
+
+const batchRank = (b: Batch) => (b.closedAt ? 1000 : 0) + b.leadIds.length;
+
+export async function hydrateBookingFlow() {
+  try {
+    const { data, error } = await db().from(TABLE).select("kind,id,data");
+    if (error) throw error;
+    const rows = (data ?? []) as { kind: Kind; id: string; data: any }[];
+    const remoteLeads = rows.filter((r) => r.kind === "lead").map((r) => r.data as FlowLead);
+    const remoteBatches = rows.filter((r) => r.kind === "batch").map((r) => r.data as Batch);
+    const s = useBookingFlow.getState();
+
+    // a copy with more timeline events is the newer one; ties go to the shared copy
+    const pushLeads: FlowLead[] = [];
+    const remoteLeadById = new Map(remoteLeads.map((l) => [l.id, l]));
+    const leads = s.leads.map((l) => {
+      const r = remoteLeadById.get(l.id);
+      if (!r || l.events.length > r.events.length) { pushLeads.push(l); return l; }
+      return r;
+    });
+    const localLeadIds = new Set(s.leads.map((l) => l.id));
+    remoteLeads.forEach((r) => { if (!localLeadIds.has(r.id)) leads.push(r); });
+
+    const pushBatches: Batch[] = [];
+    const remoteBatchById = new Map(remoteBatches.map((b) => [b.id, b]));
+    const batches = s.batches.map((b) => {
+      const r = remoteBatchById.get(b.id);
+      if (!r || batchRank(b) > batchRank(r)) { pushBatches.push(b); return b; }
+      return r;
+    });
+    const localBatchIds = new Set(s.batches.map((b) => b.id));
+    remoteBatches.forEach((r) => { if (!localBatchIds.has(r.id)) batches.push(r); });
+
+    applyingRemote = true;
+    useBookingFlow.setState({ leads, batches });
+    applyingRemote = false;
+    pushLeads.forEach((l) => queue("lead", l));
+    pushBatches.forEach((b) => queue("batch", b));
+  } catch (e) {
+    console.error("[booking-flow] hydrate failed", e);
+  }
+}
+
+if (typeof window !== "undefined") {
+  // every change to a lead or batch is queued for the database
+  useBookingFlow.subscribe((s, prev) => {
+    if (applyingRemote) return;
+    if (s.leads !== prev.leads) {
+      const before = new Map(prev.leads.map((l) => [l.id, l]));
+      s.leads.forEach((l) => { if (before.get(l.id) !== l) queue("lead", l); });
+    }
+    if (s.batches !== prev.batches) {
+      const before = new Map(prev.batches.map((b) => [b.id, b]));
+      s.batches.forEach((b) => { if (before.get(b.id) !== b) queue("batch", b); });
+    }
+  });
+  setTimeout(() => void hydrateBookingFlow(), 0);
+  setInterval(() => void hydrateBookingFlow(), 15000); // pick up other devices' changes
+}

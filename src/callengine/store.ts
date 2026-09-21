@@ -36,7 +36,6 @@ export const useCallEngine = create<CallEngineStore>()(
 
       save: (r) => set((s) => ({ records: [r, ...s.records].slice(0, 2000) })),
 
-
       // GHARPAY_TODO: Updated- markSent, CancelFollowUps,sendFollowUp functions to patch the call record in the database when a message is sent or a follow-up is cancelled/sent.
       markSent: (id) => {
         set((s) => ({
@@ -75,9 +74,6 @@ export const useCallEngine = create<CallEngineStore>()(
         void patchCallRecord(id, { follow_up_state: "sent" });
       },
 
-
-
-
       noAnswerStreak: (ulid) => {
         let n = 0;
         for (const r of get().records.filter((r) => r.ulid === ulid)) {
@@ -105,8 +101,8 @@ export const useCallEngine = create<CallEngineStore>()(
               .sort((a, b) => b.ts.localeCompare(a.ts))
               .slice(0, 2000),
           });
-        } catch {
-          /* offline or not signed in: keep working from this device's copy */
+        } catch (e) {
+          console.error("[calls] hydrate failed", e);
         }
       },
     }),
