@@ -5,8 +5,17 @@ import { useCallEngine } from "@/callengine/store";
 import { MOVEMENT_LABEL, agendaDef, type MovementClass } from "@/callengine/types";
 import { supabase } from "@/integrations/supabase/client";
 
-const Block = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <div className="rounded-xl border bg-card p-3">
+// TODO: Updated the Block Function.
+const Block = ({
+  title,
+  children,
+  className,
+}: {
+  title: string;
+  children: React.ReactNode;
+  className?: string;
+}) => (
+  <div className={`rounded-xl border bg-card p-3 ${className ?? ""}`}>
     <div className="pb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
       {title}
     </div>
@@ -33,7 +42,7 @@ const Bar = ({ label, value, total }: { label: string; value: number; total: num
 
 export function CallIntelligence() {
   const records = useCallEngine((s) => s.records);
-
+  const [openId, setOpenId] = useState<string | null>(null);
   // GHARPAY_TODO: Added the useEffect to hydrate the call records from the database every 15 seconds.
   useEffect(() => {
     const load = () => void useCallEngine.getState().hydrate();
@@ -58,6 +67,26 @@ export function CallIntelligence() {
         setOverdue(null); // table not synced yet on this build — fail quietly
       }
     })();
+  }, []);
+
+  // TODO: Added the useEffect to fetch the count of overdue leads from the database every 15 seconds.
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const { count, error } = await (supabase as any)
+          .from("booking_flow_records")
+          .select("id", { count: "exact", head: true })
+          .eq("kind", "lead")
+          .lt("data->>nextActionAt", new Date().toISOString());
+        if (error) throw error;
+        setOverdue(count ?? 0);
+      } catch {
+        setOverdue(null);
+      }
+    };
+    load();
+    const t = setInterval(load, 15000);
+    return () => clearInterval(t);
   }, []);
 
   const data = useMemo(() => {
@@ -108,6 +137,12 @@ export function CallIntelligence() {
     };
   }, [records]);
 
+  // TODO:
+  const feed = useMemo(
+    () => [...data.today].sort((a, b) => b.ts.localeCompare(a.ts)).slice(0, 40),
+    [data.today],
+  );
+
   if (data.today.length === 0)
     return (
       <div className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
@@ -136,7 +171,72 @@ export function CallIntelligence() {
         </div>
       </Block>
 
-      {/* GHARPAY_TODO: I1 =It Shows overdue leads */}
+      {/* TODO: Added Activity who edited what */}
+      <Block title="Activity — (who edited what)" className="lg:col-span-2">
+        <div className="max-h-96 space-y-1 overflow-y-auto text-[11px]">
+          {feed.map((r) => {
+            const isOpen = openId === r.id;
+            return (
+              <div key={r.id} className="border-b py-1 last:border-0">
+                <button
+                  type="button"
+                  onClick={() => setOpenId(isOpen ? null : r.id)}
+                  className="flex w-full items-center justify-between gap-2 text-left hover:bg-muted/50"
+                >
+                  <span className="truncate">
+                    <span className="font-medium">{r.operatorName}</span>
+                    {" · "}
+                    {r.name ?? "Unnamed lead"}
+                    {" · "}
+                    {r.agenda} · {r.outcome}
+                    {r.movement !== "none" && (
+                      <span className="ml-1 text-primary">→ {r.movement}</span>
+                    )}
+                  </span>
+                  <span className="shrink-0 text-muted-foreground">
+                    {new Date(r.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}{" "}
+                    {isOpen ? "▲" : "▼"}
+                  </span>
+                </button>
+                {isOpen && (
+                  <div className="mt-1 space-y-1 rounded bg-muted/30 p-2">
+                    <div>
+                      <span className="font-medium">Message sent:</span> {r.messageNow || "—"}
+                    </div>
+                    <div>
+                      <span className="font-medium">Follow-up:</span> {r.followUp?.text || "—"} ·
+                      state: {r.followUpState}
+                    </div>
+                    <div>
+                      <span className="font-medium">Next step:</span> {r.nextStep?.label ?? "—"} due{" "}
+                      {r.nextStep?.dueAt
+                        ? new Date(r.nextStep.dueAt).toLocaleString([], {
+                            day: "numeric",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : "—"}
+                    </div>
+                    {r.capture?.note && (
+                      <div>
+                        <span className="font-medium">Note:</span> {r.capture.note}
+                      </div>
+                    )}
+                    {r.durationSec != null && (
+                      <div>
+                        <span className="font-medium">Duration:</span> {r.durationSec}s
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </Block>
+
+      {/* TODO: I1 =It Shows overdue leads */}
       <Block title="Nothing missed today">
         <div className="text-2xl font-semibold">{overdue === null ? "—" : overdue}</div>
         <div className="text-[11px] text-muted-foreground">

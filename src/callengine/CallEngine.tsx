@@ -35,6 +35,7 @@ import {
   type CallRecord,
   type OutcomeKind,
 } from "./types";
+import { OPERATORS } from "@/movement/types";
 
 const Chip = ({
   on,
@@ -275,7 +276,7 @@ export function CallEngine({ lead, onLogged }: Props) {
     // GHARPAY_TODO: Copy the message to the clipboard.
     void navigator.clipboard?.writeText(msg)?.catch(() => {});
 
-    // GHARPAY_TODO: I2 = Open WhatsApp with the lead's phone number and the message pre-filled, and save the call record to the database. 
+    // GHARPAY_TODO: I2 = Open WhatsApp with the lead's phone number and the message pre-filled, and save the call record to the database.
     const phone = (lead.phone ?? "").replace(/[^\d]/g, "");
     if (phone) window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
     engine.save(record);
@@ -337,6 +338,18 @@ export function CallEngine({ lead, onLogged }: Props) {
             <div className="truncate text-sm font-semibold">{lead.name ?? "Customer"}</div>
             <div className="text-[10px] text-muted-foreground">M-POWER CALL · {def.label}</div>
           </div>
+          {/* TODO: Added a dropown to change operator */}
+          <select
+            className="h-6 rounded border bg-background px-1 text-[10px]"
+            value={mv.actor.id}
+            onChange={(e) => mv.setActor(OPERATORS.find((o) => o.id === e.target.value)!)}
+          >
+            {OPERATORS.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
           {lead.nextAction &&
             (() => {
               const late = new Date(lead.nextAction.dueAt).getTime() < Date.now();

@@ -92,7 +92,7 @@ export const useCallEngine = create<CallEngineStore>()(
           const remote = (await fetchCallRecords(500)).map(rowToRecord);
           const remoteIds = new Set(remote.map((r) => r.id));
           const localOnly = get().records.filter((r) => !remoteIds.has(r.id));
-          // calls made offline / before sync: push them up (skip ones still being saved right now)
+          // calls made offline / before sync: push them up
           localOnly
             .filter((r) => Date.now() - new Date(r.ts).getTime() > 60_000)
             .forEach((r) => void pushCallRecord(r));
