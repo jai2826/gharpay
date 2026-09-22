@@ -1,8 +1,9 @@
 // Calls dashboard — why we called, what happened, and how much of it was waste.
-import { useEffect, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { useCallEngine } from "@/callengine/store";
 import { MOVEMENT_LABEL, agendaDef, type MovementClass } from "@/callengine/types";
+import { supabase } from "@/integrations/supabase/client";
 
 const Block = ({ title, children }: { title: string; children: React.ReactNode }) => (
   <div className="rounded-xl border bg-card p-3">
@@ -40,7 +41,25 @@ export function CallIntelligence() {
     const t = setInterval(load, 15000); // refresh every 15 seconds
     return () => clearInterval(t);
   }, []);
-  
+
+  // GHARPAY_TODO: Added the useState and useEffect to fetch the count of overdue leads from the database.
+  const [overdue, setOverdue] = useState<number | null>(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const { count, error } = await (supabase as any)
+          .from("booking_flow_records")
+          .select("id", { count: "exact", head: true })
+          .eq("kind", "lead")
+          .lt("data->>nextActionAt", new Date().toISOString());
+        if (error) throw error;
+        setOverdue(count ?? 0);
+      } catch {
+        setOverdue(null); // table not synced yet on this build — fail quietly
+      }
+    })();
+  }, []);
+
   const data = useMemo(() => {
     const today = records.filter(
       (r) => new Date(r.ts).toDateString() === new Date().toDateString(),
@@ -117,6 +136,13 @@ export function CallIntelligence() {
         </div>
       </Block>
 
+      {/* GHARPAY_TODO: I1 =It Shows overdue leads */}
+      <Block title="Nothing missed today">
+        <div className="text-2xl font-semibold">{overdue === null ? "—" : overdue}</div>
+        <div className="text-[11px] text-muted-foreground">
+          customers past their next-action deadline, right now
+        </div>
+      </Block>
       <Block title="What happened">
         <div className="grid grid-cols-2 gap-x-4 text-[11px]">
           <div className="flex justify-between">

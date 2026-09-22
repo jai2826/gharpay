@@ -275,7 +275,11 @@ export function CallEngine({ lead, onLogged }: Props) {
     // GHARPAY_TODO: Copy the message to the clipboard.
     void navigator.clipboard?.writeText(msg)?.catch(() => {});
 
+    // GHARPAY_TODO: I2 = Open WhatsApp with the lead's phone number and the message pre-filled, and save the call record to the database. 
+    const phone = (lead.phone ?? "").replace(/[^\d]/g, "");
+    if (phone) window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
     engine.save(record);
+
     void pushCallRecord(record).then((res) => {
       if (!res.ok) toast.warning(`Saved on this device — not synced yet: ${res.error}`);
     });
@@ -859,8 +863,6 @@ export function CallEngine({ lead, onLogged }: Props) {
           <div className="text-center text-[10px] text-muted-foreground">
             Enter = next field · Ctrl+Enter = finish
           </div>
-
-          
         </>
       )}
       {phase === "outputs" && outputs && (
