@@ -4,14 +4,39 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { STATUS_CLASS, STATUS_LABEL, TEAM_LABEL, fmtTime } from "@/lib/tower/review-os";
 import type { Database } from "@/integrations/supabase/types";
+import { useBookingFlow } from "@/bookingflow/store";
 
 type Row = Database["public"]["Tables"]["lead_timeline"]["Row"];
+
+const isUuid = (val?: string | null): boolean =>
+  typeof val === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
 export function LeadQualityTimeline({ leadId, limit = 60 }: { leadId: string; limit?: number }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
 
   const load = async () => {
+    if (!isUuid(leadId)) {
+      const bfLead = useBookingFlow.getState().leads.find((l) => l.id === leadId || l.canonicalId === leadId || l.phone === leadId);
+      if (bfLead && bfLead.events) {
+        const synthetic: Row[] = [...bfLead.events].reverse().slice(0, limit).map((e, idx) => ({
+          id: `ev-${leadId}-${idx}`,
+          lead_id: leadId,
+          at: e.at,
+          team: "calling" as any,
+          activity: `${e.label}${e.detail ? ` — ${e.detail}` : ""}`,
+          actor: e.actor || "Handler",
+          score: null,
+          feedback_status: null,
+          metadata: null,
+          created_at: e.at,
+        }));
+        setRows(synthetic);
+      } else {
+        setRows([]);
+      }
+      return;
+    }
     const { data } = await supabase
       .from("lead_timeline")
       .select("*")
@@ -23,6 +48,7 @@ export function LeadQualityTimeline({ leadId, limit = 60 }: { leadId: string; li
 
   useEffect(() => {
     load();
+    if (!isUuid(leadId)) return;
     const ch = supabase
       .channel(`timeline-${leadId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "lead_timeline", filter: `lead_id=eq.${leadId}` }, () => load())

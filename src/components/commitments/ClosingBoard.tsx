@@ -460,7 +460,13 @@ function Row({ c, now }: { c: CloseCommitment; now: number }) {
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-sm font-semibold">{c.leadName}</span>
+            {c.leadId ? (
+              <Link to="/tower/leads/$id" params={{ id: c.leadId }} className="text-sm font-semibold hover:underline">
+                {c.leadName}
+              </Link>
+            ) : (
+              <span className="text-sm font-semibold">{c.leadName}</span>
+            )}
             <Badge variant="outline" className={cn("text-[10px]", TONE_STYLE[def?.tone ?? "week"])}>
               {def?.short ?? c.windowId}
             </Badge>
